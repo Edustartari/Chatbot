@@ -4,6 +4,7 @@ import {
 	TextField,
 	Button,
 	CircularProgress,
+	Backdrop ,
 	Paper,
 	Box,
 	Typography,
@@ -16,91 +17,79 @@ import {
 	Select
 } from '@mui/material';
 
-const mockChatHistory1 = [
-	{
-		author: 'user',
-		name: 'Edward',
-		message: 'Hey there',
-		date: '2023-10-01T12:00:00Z'
-	},
-	{
-		author: 'bot',
-		name: 'KnowledgeAgent',
-		message: 'Hi sir, How can I help?',
-		date: '2023-10-01T12:00:00Z'
-	},
-	{
-		author: 'user',
-		name: 'Edward',
-		message: 'I have a question. What is the result of 2 + 2?',
-		date: '2023-10-01T12:00:00Z'
-	},
-	{
-		author: 'bot',
-		name: 'MathAgent',
-		message: 'The answer is: 4',
-		date: '2023-10-01T12:00:00Z'
-	},
-]
-const mockChatHistory2 = [
-	{
-		author: 'user',
-		name: 'Edward',
-		message: 'Does anyone can help me?',
-		date: '2023-10-01T12:00:00Z'
-	},
-	{
-		author: 'bot',
-		name: 'KnowledgeAgent',
-		message: 'Yes sure, I can help!',
-		date: '2023-10-01T12:00:00Z'
-	},
-]
-const mockChatHistory3 = [
-	{
-		author: 'user',
-		name: 'Edward',
-		message: 'What is the distance between Rio de Janeiro and New York?',
-		date: '2023-10-01T12:00:00Z'
-	},
-	{
-		author: 'bot',
-		name: 'MathAgent',
-		message: 'It is around 4,800 kilometers.',
-		date: '2023-10-01T12:00:00Z'
-	},
-]
-
-const conversations = {
-	1: mockChatHistory1,
-	2: mockChatHistory2,
-	3: mockChatHistory3
-}
-
 export default function AppMobile() {
-	const [userMessage, setUserMessage] = useState('');
-	const [chatHistory, setChatHistory] = useState(mockChatHistory1);
+	const [newUserMessage, setNewUserMessage] = useState('');
+	const [chatUserId, setChatUserId] = useState('');
+	const [currentConversation, setCurrentConversation] = useState({});
+	const [conversationsList, setConversationsList] = useState({});
 	const [openSnackbar, setOpenSnackbar] = useState(false);
 	const [snackbarMessage, setSnackbarMessage] = useState('');
-	const [conversation, setConversation] = useState('');
+	const [backdrop, setBackdrop] = useState(true);
 	const [loading, setLoading] = useState(false);
 
-	const handleSendMessage = () => {
+	useEffect(() => {
+		let userId = localStorage.getItem('chatUserId');
+
+		const fetchConversations = async () => {
+			try {
+				const response = await fetch(`/get-conversations/${userId}`);
+				const data = await response.json();
+				if (data.status_code === 200) {
+					setConversationsList(data.conversationsList);
+					if(data.conversationsList && Object.keys(data.conversationsList).length > 0) {
+						setCurrentConversation(data.conversationsList[Object.keys(data.conversationsList)[0]]);
+					}
+				} else {
+					setSnackbarMessage(data.message || 'Error fetching conversations');
+					setOpenSnackbar(true);
+				}
+			} catch (error) {
+				console.log(error);
+				setSnackbarMessage('Error fetching conversations');
+				setOpenSnackbar(true);
+			} finally {
+				setBackdrop(false);
+			}
+		};
+
+		if(userId){
+			setChatUserId(userId);
+			fetchConversations();
+		} else {
+			// Create a random hash_id
+			let random_hash = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+			localStorage.setItem('chatUserId', random_hash);
+			setChatUserId(random_hash);
+			setBackdrop(false);
+		}
+	}, []);
+
+	const handleSendMessage = async () => {
 		console.log('')
 		console.log('handleSendMessage')
-		if (userMessage.length === 0){
+		if (newUserMessage.length === 0){
 			setSnackbarMessage('Please enter a message')
 			setOpenSnackbar(true)
 			return
 		}
 
 		// Do input sanitization to remove malicious content (e.g., HTML, JS).
-		let sanitizedMessage = userMessage.replace(/<[^>]*>/g, ''); // Simple HTML tag removal
+		let sanitizedMessage = newUserMessage.replace(/<[^>]*>/g, ''); // Simple HTML tag removal
 		sanitizedMessage = sanitizedMessage.replace(/javascript:/g, ''); // Remove JavaScript links
 
-		setChatHistory([...chatHistory, { author: 'user', name: 'Edward', message: sanitizedMessage }])
-		setUserMessage('');
+		let updateCurrentConversation = currentConversation
+		updateCurrentConversation = {
+			...updateCurrentConversation,
+			history: [
+				...updateCurrentConversation.history,
+				{ author: 'user', name: 'Edward', message: sanitizedMessage, date: '2023-10-01T12:00:00Z' }
+			]
+		}
+		setCurrentConversation(updateCurrentConversation);
+		setNewUserMessage('');
 
+		// Set a delay of 1 second
+		await new Promise(resolve => setTimeout(resolve, 1000));
 		setLoading(true);
 		
 		// Fetch data
@@ -109,29 +98,32 @@ export default function AppMobile() {
 		try {
 			// Send the payload below
 			const payload = {
-				"message": "Qual a taxa da maquininha?",
-				"user_id": "client789",
+				"message": sanitizedMessage,
+				"user_id": chatUserId,
 				"conversation_id": "conv-1234"
 			}
-			const response = fetch(`/chat/`, {
+			const response = await fetch(`/chat/`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify(payload)
 			});
-			let text = response.text();
-			let json_data = JSON.parse(text);
-			if (response.status !== 200) {
-				setSnackbarMessage(json_data?.message || defaultErrorMessage);
+			let data = await response.json();
+
+			if (response.status_code !== 200) {
+				console.log("if (response.status_code !== 200)")
+				setSnackbarMessage(data?.message || defaultErrorMessage);
 				return;
 			}
-			if( json_data.status_message === 'error') {
-				setSnackbarMessage(json_data.message || defaultErrorMessage);
+			if( data.status_message === 'error') {
+				console.log("if( data.status_message === 'error')")
+				setSnackbarMessage(data.message || defaultErrorMessage);
 				return;
 			}
-			result = json_data.data
+			result = data.data
 		} catch (error) {
+			console.log("error: ", error)
 			setSnackbarMessage(defaultErrorMessage);
 			setOpenSnackbar(true);
 		} finally {
@@ -140,7 +132,8 @@ export default function AppMobile() {
 	}
 
 	const handleChange = (event) => {
-		setConversation(event.target.value);
+		const selectedChatId = event.target.value;
+		setCurrentConversation(conversationsList[selectedChatId]);
 	};
 
 	return (
@@ -153,40 +146,44 @@ export default function AppMobile() {
 				display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'center'
 			}}>
 				<Box sx={{ minWidth: 120 }}>
-					<Box sx={{margin: '0 5px 5px'}}>Start a conversation or pick one previously started</Box>
-					<FormControl fullWidth>
-						<InputLabel id="demo-simple-select-label">Conversation</InputLabel>
-						<Select
-							labelId="demo-simple-select-label"
-							id="demo-simple-select"
-							value={conversation}
-							label="Conversation"
-							onChange={handleChange}
-						>
-							<MenuItem value={10}>Ten</MenuItem>
-							<MenuItem value={20}>Twenty</MenuItem>
-							<MenuItem value={30}>Thirty</MenuItem>
-						</Select>
-					</FormControl>
+					<Box sx={{margin: '0 5px 5px'}}>Start a conversation {Object.keys(conversationsList).length > 0 ? 'or pick one previously started' : ''}</Box>
+					{Object.keys(conversationsList).length > 0 &&
+						<FormControl fullWidth>
+							<InputLabel id="demo-simple-select-label">Conversation</InputLabel>
+							<Select
+								labelId="demo-simple-select-label"
+								id="demo-simple-select"
+								value={currentConversation.conversation_id}
+								label="Conversation"
+								onChange={handleChange}
+							>
+								{Object.entries(conversationsList).map(([key, value]) => (
+									<MenuItem key={key} value={key}>{`Conversation ${key}`}</MenuItem>
+								))}
+							</Select>
+						</FormControl>
+					}
 				</Box>
 				<Divider flexItem sx={{width: '100%', marginTop: '20px'}}/>
 				<Box component="section" sx={{ height: '100%', width: '100%', overflow: 'auto' }}>
-					{chatHistory.map((chat, index) => (
+					{Object.keys(conversationsList).length > 0 ? currentConversation.history.map((chat, index) => (
 						<Box key={index} sx={{ marginBottom: '10px' }}>
 							<Typography variant="body1" sx={{ fontWeight: 'bold' }}>{chat.name}:</Typography>
 							<Typography variant="body2">{chat.message}</Typography>
 						</Box>
-					))}
+					)) : (
+						<Typography variant="body2"></Typography>
+					)}
 					{loading &&
 						<Box sx={{ marginBottom: '10px' }}>
-							<Typography variant="body1" sx={{ fontWeight: 'bold' }}>Typing</Typography>
+							<Typography variant="body1" sx={{ fontWeight: 'bold' }}>Typing...</Typography>
 							<Typography variant="body2">...</Typography>
 						</Box>
 					}
 				</Box>
 				<Divider flexItem sx={{width: '100%', marginBottom: '20px'}}/>
 				<Box component="section" sx={{width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-					<TextField value={userMessage} onChange={(e) => setUserMessage(e.target.value)} fullWidth id="outlined-basic" label="Type here..." variant="outlined" />
+					<TextField value={newUserMessage} onChange={(e) => setNewUserMessage(e.target.value)} fullWidth id="outlined-basic" label="Type here..." variant="outlined" />
 					<Button variant="contained" sx={{marginLeft: '10px'}} onClick={handleSendMessage}>SEND</Button>
 				</Box>
 			</Paper>
@@ -196,6 +193,12 @@ export default function AppMobile() {
 				onClose={() => setOpenSnackbar(false)}
 				message={snackbarMessage}
 			/>
+			<Backdrop
+				sx={(theme) => ({ color: '#fff', zIndex: theme.zIndex.drawer + 1 })}
+				open={backdrop}
+			>
+				<CircularProgress color="inherit" />
+			</Backdrop>
 		</Container>
 	);
 }
